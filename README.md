@@ -1,14 +1,11 @@
-Here is your full README:
-
-    markdown
 # HNG Stage 1 - Profile Intelligence API
 
 A REST API that accepts a name, enriches it using three external APIs (Genderize, Agify, Nationalize), stores the result in a PostgreSQL database, and allows retrieval and management of stored profiles.
 
 ## Links
 
-- GitHub Repository: https://github.com/osazuwadev/hng-stage-1-api
-- Live API URL: https://your-live-url.com (update after deployment)
+- GitHub Repository: https://github.com/osazuwadev/hng-stage-1
+- Live API URL: https://hng-stage-1-production-fb86.up.railway.app
 
 ## Tech Stack
 
@@ -27,19 +24,18 @@ A REST API that accepts a name, enriches it using three external APIs (Genderize
 
 ## Setup & Installation
 
-    bash
+```bash
 # clone the repo
-git clone https://github.com/osazuwadev/hng-stage-1-api.git
+git clone https://github.com/osazuwadev/hng-stage-1.git
 
 # move into the folder
-cd hng-stage-1-api
+cd hng-stage-1
 
 # install dependencies
 npm install
 
 # setup environment variables
-cp .env.example .env
-# then update .env with your DATABASE_URL
+# create a .env file and add your DATABASE_URL
 
 # push schema to database
 npx prisma db push
@@ -52,19 +48,21 @@ npm run dev
 
 # run in production
 npm start
-
+```
 
 ## Environment Variables
 
 Create a `.env` file in the root folder:
 
+```
 DATABASE_URL="your-neon-postgresql-connection-string"
-
+```
 
 ## Base URL
 
-https://your-live-url.com
-
+```
+https://hng-stage-1-production-fb86.up.railway.app
+```
 
 ## Endpoints
 
@@ -73,13 +71,14 @@ https://your-live-url.com
 Creates a new profile by enriching a name with gender, age, and nationality data.
 
 **Request Body:**
-    json
+```json
 {
     "name": "nelson"
 }
+```
 
 **Success Response (201):**
-    json
+```json
 {
   "status": "success",
   "data": {
@@ -95,10 +94,10 @@ Creates a new profile by enriching a name with gender, age, and nationality data
     "created_at": "2026-04-17T21:34:01.598Z"
   }
 }
-
+```
 
 **Idempotency - Profile already exists (200):**
-    json
+```json
 {
   "status": "success",
   "message": "Profile already exists",
@@ -115,7 +114,7 @@ Creates a new profile by enriching a name with gender, age, and nationality data
     "created_at": "2026-04-17T21:34:01.598Z"
   }
 }
-
+```
 
 ---
 
@@ -134,9 +133,10 @@ Returns all profiles. Supports optional filters.
 **Example Request:**
 ```
 GET /api/profiles?gender=male&country_id=US
+```
 
 **Success Response (200):**
-    json
+```json
 {
   "status": "success",
   "count": 1,
@@ -155,7 +155,7 @@ GET /api/profiles?gender=male&country_id=US
     }
   ]
 }
-
+```
 
 ---
 
@@ -164,12 +164,12 @@ GET /api/profiles?gender=male&country_id=US
 Returns a single profile by ID.
 
 **Example Request:**
-
+```
 GET /api/profiles/019d9d5d-777a-750f-8387-c3772a2c1fd8
-
+```
 
 **Success Response (200):**
-    json
+```json
 {
   "status": "success",
   "data": {
@@ -185,7 +185,7 @@ GET /api/profiles/019d9d5d-777a-750f-8387-c3772a2c1fd8
     "created_at": "2026-04-17T21:34:01.598Z"
   }
 }
-
+```
 
 ---
 
@@ -194,39 +194,35 @@ GET /api/profiles/019d9d5d-777a-750f-8387-c3772a2c1fd8
 Deletes a profile by ID.
 
 **Example Request:**
-
+```
 DELETE /api/profiles/019d9d5d-777a-750f-8387-c3772a2c1fd8
-
+```
 
 **Success Response:** `204 No Content`
 
-
+---
 
 ## Error Responses
 
 ### 400 - Missing or empty name
-    json
+```json
 {
   "status": "error",
   "message": "name is required"
 }
-
-
+```
 ### 422 - Invalid name type
     json
 {
   "status": "error",
   "message": "name must be a string"
 }
-
 ### 404 - Profile not found
     json
 {
   "status": "error",
   "message": "Profile not found"
 }
-
-
 ### 502 - External API returned invalid response
     json
 {
@@ -234,9 +230,8 @@ DELETE /api/profiles/019d9d5d-777a-750f-8387-c3772a2c1fd8
   "message": "Genderize returned an invalid response"
 }
 
-
 ### 500 - Server error
-json
+```json
 {
   "status": "error",
   "message": "Something went wrong, please try again"
