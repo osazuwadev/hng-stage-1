@@ -116,10 +116,10 @@ router.post("/profiles", async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error)
+        console.error("FULL ERROR:", error.message)
         return res.status(500).json({
             status: "error",
-            message: "Something went wrong, please try again"
+            message: error.message 
         });
     }
 });
