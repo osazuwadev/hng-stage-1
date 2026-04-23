@@ -5,11 +5,11 @@ import prisma from "../lib/prisma.js";
 
 const router = Router();
 
-// POST /api/profiles
+
+// ================= POST /api/profiles =================
 router.post("/profiles", async (req, res) => {
     const { name } = req.body;
 
-    // validation 1: missing or empty name
     if (!name || name.trim() === "") {
         return res.status(400).json({
             status: "error",
@@ -17,7 +17,6 @@ router.post("/profiles", async (req, res) => {
         });
     }
 
-    // validation 2: name must be a string
     if (typeof name !== "string" || !isNaN(name)) {
         return res.status(422).json({
             status: "error",
@@ -26,7 +25,6 @@ router.post("/profiles", async (req, res) => {
     }
 
     try {
-        // check if profile already exists (idempotency)
         const existing = await prisma.profile.findUnique({
             where: { name: name.toLowerCase() }
         });
@@ -39,7 +37,6 @@ router.post("/profiles", async (req, res) => {
             });
         }
 
-        // call all 3 APIs at the same time
         const [genderRes, ageRes, countryRes] = await Promise.all([
             axios.get(`https://api.genderize.io?name=${name}`),
             axios.get(`https://api.agify.io?name=${name}`),
@@ -50,63 +47,51 @@ router.post("/profiles", async (req, res) => {
         const ageData = ageRes.data;
         const countryData = countryRes.data;
 
-        // edge case: Genderize returned null
-        if (genderData.gender === null || genderData.count === 0) {
+        if (!genderData.gender) {
             return res.status(502).json({
-                status: "502",
-                message: "Genderize returned an invalid response"
+                status: "error",
+                message: "Genderize failed"
             });
         }
 
-        // edge case: Agify returned null
-        if (ageData.age === null) {
+        if (!ageData.age) {
             return res.status(502).json({
-                status: "502",
-                message: "Agify returned an invalid response"
+                status: "error",
+                message: "Agify failed"
             });
         }
 
-        // edge case: Nationalize returned no country
-        if (!countryData.country || countryData.country.length === 0) {
+        if (!countryData.country?.length) {
             return res.status(502).json({
-                status: "502",
-                message: "Nationalize returned an invalid response"
+                status: "error",
+                message: "Nationalize failed"
             });
         }
 
-        // extract data
-        const gender = genderData.gender;
-        const gender_probability = genderData.probability;
-        const sample_size = genderData.count;
         const age = ageData.age;
 
-        // compute age_group
         let age_group;
         if (age <= 12) age_group = "child";
         else if (age <= 19) age_group = "teenager";
         else if (age <= 59) age_group = "adult";
         else age_group = "senior";
 
-        // get country with highest probability
         const topCountry = countryData.country.reduce((a, b) =>
             a.probability > b.probability ? a : b
         );
-        const country_id = topCountry.country_id;
-        const country_probability = topCountry.probability;
 
-        // store in database
         const profile = await prisma.profile.create({
             data: {
                 id: uuidv7(),
                 name: name.toLowerCase(),
-                gender,
-                gender_probability,
-                sample_size,
+                gender: genderData.gender,
+                gender_probability: genderData.probability,
                 age,
                 age_group,
-                country_id,
-                country_probability,
-                created_at: new Date().toISOString()
+                country_id: topCountry.country_id,
+                country_name: topCountry.country_id,
+                country_probability: topCountry.probability,
+                created_at: new Date()
             }
         });
 
@@ -116,96 +101,171 @@ router.post("/profiles", async (req, res) => {
         });
 
     } catch (error) {
-        console.error("FULL ERROR:", error.message)
         return res.status(500).json({
             status: "error",
-            message: error.message 
+            message: "Server failure"
         });
     }
 });
 
-// GET /api/profiles
+
+// ================= GET /api/profiles =================
 router.get("/profiles", async (req, res) => {
     try {
-        const { gender, country_id, age_group } = req.query;
+        const {
+            gender,
+            country_id,
+            age_group,
+            min_age,
+            max_age,
+            min_gender_probability,
+            min_country_probability,
+            sort_by,
+            order,
+            page = 1,
+            limit = 10
+        } = req.query;
 
-        // build filter object
         const where = {};
+
         if (gender) where.gender = gender.toLowerCase();
         if (country_id) where.country_id = country_id.toUpperCase();
         if (age_group) where.age_group = age_group.toLowerCase();
 
-        const profiles = await prisma.profile.findMany({ where });
+        if (min_age || max_age) {
+            where.age = {};
+            if (min_age) where.age.gte = Number(min_age);
+            if (max_age) where.age.lte = Number(max_age);
+        }
 
-        return res.status(200).json({
+        if (min_gender_probability) {
+            where.gender_probability = {
+                gte: Number(min_gender_probability)
+            };
+        }
+
+        if (min_country_probability) {
+            where.country_probability = {
+                gte: Number(min_country_probability)
+            };
+        }
+
+        let orderBy = { created_at: "desc" };
+
+        if (sort_by) {
+            orderBy = {
+                [sort_by]: order === "desc" ? "desc" : "asc"
+            };
+        }
+
+        const take = Math.min(Number(limit), 50) || 10;
+        const skip = (Number(page) - 1) * take;
+
+        const [profiles, total] = await Promise.all([
+            prisma.profile.findMany({ where, orderBy, skip, take }),
+            prisma.profile.count({ where })
+        ]);
+
+        return res.json({
             status: "success",
-            count: profiles.length,
+            page: Number(page),
+            limit: take,
+            total,
             data: profiles
         });
 
-    } catch (error) {
+    } catch {
         return res.status(500).json({
             status: "error",
-            message: "Something went wrong, please try again"
+            message: "Server failure"
         });
     }
 });
 
-// GET /api/profiles/:id
-router.get("/profiles/:id", async (req, res) => {
+
+// ================= NLP PARSER =================
+function parseQuery(q) {
+    if (!q) return null;
+
+    const query = q.toLowerCase();
+    const filters = {};
+
+    if (query.includes("male")) filters.gender = "male";
+    if (query.includes("female")) filters.gender = "female";
+
+    if (query.includes("young")) {
+        filters.min_age = 16;
+        filters.max_age = 24;
+    }
+
+    const match = query.match(/above (\d+)/);
+    if (match) filters.min_age = Number(match[1]);
+
+    if (query.includes("teenager")) filters.age_group = "teenager";
+    if (query.includes("adult")) filters.age_group = "adult";
+
+    const countryMap = {
+        nigeria: "NG",
+        kenya: "KE",
+        angola: "AO"
+    };
+
+    for (const c in countryMap) {
+        if (query.includes(c)) {
+            filters.country_id = countryMap[c];
+        }
+    }
+
+    return Object.keys(filters).length ? filters : null;
+}
+
+
+// ================= GET /api/profiles/search =================
+router.get("/profiles/search", async (req, res) => {
     try {
-        const { id } = req.params;
+        const { q, page = 1, limit = 10 } = req.query;
 
-        const profile = await prisma.profile.findUnique({
-            where: { id }
-        });
+        const parsed = parseQuery(q);
 
-        if (!profile) {
-            return res.status(404).json({
+        if (!parsed) {
+            return res.status(400).json({
                 status: "error",
-                message: "Profile not found"
+                message: "Unable to interpret query"
             });
         }
 
-        return res.status(200).json({
+        const where = {};
+
+        if (parsed.gender) where.gender = parsed.gender;
+        if (parsed.age_group) where.age_group = parsed.age_group;
+        if (parsed.country_id) where.country_id = parsed.country_id;
+
+        if (parsed.min_age || parsed.max_age) {
+            where.age = {};
+            if (parsed.min_age) where.age.gte = parsed.min_age;
+            if (parsed.max_age) where.age.lte = parsed.max_age;
+        }
+
+        const take = Math.min(Number(limit), 50) || 10;
+        const skip = (Number(page) - 1) * take;
+
+        const [profiles, total] = await Promise.all([
+            prisma.profile.findMany({ where, skip, take }),
+            prisma.profile.count({ where })
+        ]);
+
+        return res.json({
             status: "success",
-            data: profile
+            page: Number(page),
+            limit: take,
+            total,
+            data: profiles
         });
 
-    } catch (error) {
+    } catch {
         return res.status(500).json({
             status: "error",
-            message: "Something went wrong, please try again"
-        });
-    }
-});
-
-// DELETE /api/profiles/:id
-router.delete("/profiles/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const profile = await prisma.profile.findUnique({
-            where: { id }
-        });
-
-        if (!profile) {
-            return res.status(404).json({
-                status: "error",
-                message: "Profile not found"
-            });
-        }
-
-        await prisma.profile.delete({
-            where: { id }
-        });
-
-        return res.status(204).send();
-
-    } catch (error) {
-        return res.status(500).json({
-            status: "error",
-            message: "Something went wrong, please try again"
+            message: "Server failure"
         });
     }
 });

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "npx prisma generate && node src/app.js",
     "dev": "nodemon src/app.js",
+    "seed": "node prisma/seed.js",
     "build": "npx prisma generate",
     "postinstall": "prisma generate"
   },
@@ -19,6 +20,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
+    "node-fetch": "^3.3.2",
     "prisma": "^5.22.0",
     "uuid": "^13.0.0"
   },
